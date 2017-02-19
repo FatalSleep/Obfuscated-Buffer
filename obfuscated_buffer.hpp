@@ -102,17 +102,15 @@
         template<typename T>
         T read() {
             int offset = seek_in;
-            seek_in = seek_in + sizeof(T);
-            fast_align(seek_in);
-            return **reinterpret_cast<T*>(routed_references + offset);
+            seek_in = ((seek_in + sizeof(T)) + fast_al) & fast_nt;
+            return *reinterpret_cast<T*>(routed_references + offset);
         };
 
         // Writes the indicated value to the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
         void write(T value) {
-            T* data = *reinterpret_cast<T*>(routed_references + seek_in);
-            seek_in = seek_in + sizeof(T);
-            fast_align(seek_in);
+            T* data = reinterpret_cast<T*>(routed_references + seek_in);
+            seek_in = ((seek_in + sizeof(T)) + fast_al) & fast_nt;
             *data = value;
         };
     };
