@@ -4,11 +4,6 @@
 
 #ifndef OBFUSCATED_BUFFER
 #define OBFUSCATED_BUFFER
-    /*
-    #include "isaac_prng.hpp"
-    #include "sha512.hpp"
-    */
-
     template<size_t size, size_t align, unsigned long long(*randfunc)()>
     class obfuscated_buffer {
         private:
@@ -26,12 +21,12 @@
                 This creates a buffer where each byte written to the buffer is written to a
                 random index in the buffer----via index routing via pointers.
         */
-        ///<summary>Generates the buffer's underlying routed references buffer.</summary>
+        // Generates the buffer's underlying routed references buffer.
         void build_randref() {
             size_t* routes = new size_t[size_of];
 
             for (size_t i = 0, j; i < size_of; i++) {
-                j = (i == 0)? 0 : static_cast<size_t>(*func()) % (i + 1);
+                j = (i == 0)? 0 : static_cast<size_t>(randfunc()) % (i + 1);
 
                 if (j != i) {
                     routes[i] = routes[j];
@@ -46,7 +41,7 @@
         }
 
         public:
-        ///<summary>Allocates the buffer and generates it's underlying routed reference buffer.</summary>
+        // Allocates the buffer and generates it's underlying routed reference buffer
         obfuscated_buffer() {
             size_of = size;
             align_of = align;
@@ -75,18 +70,19 @@
 
         void memzero() { for (int i = 0; i < size_of; i++) memory[i] = 0; }
 
-        ///<summary>Deallocates the buffer's memory.</summary>
+        // Deallocates the buffer's memory.
         void dealloc() {
             if (memory != nullptr && routed_references != nullptr) {
                 delete[] memory;
                 delete[] routed_references;
-                memory = routed_references = nullptr;
+                memory = nullptr;
+                routed_references = nullptr;
                 size_of = 0;
                 align_of = 0;
             }
         }
 
-        ///<summary>Deallocates existing memmory & re-allocates the buffer and generates it's underlying routed reference buffer.</summary>
+        // Deallocates existing memmory & re-allocates the buffer and generates it's underlying routed reference buffer.
         template<size_t new_size = size, size_t new_align = align>
         void alloc() {
             dealloc();
@@ -102,7 +98,7 @@
             build_randref();
         }
 
-        ///<summary>reads a value from the buffer using the buffer's underlying routed reference buffer.</summary>
+        // Reads a value from the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
         T read() {
             int offset = seek_in;
@@ -111,7 +107,7 @@
             return **reinterpret_cast<T*>(routed_references + offset);
         };
 
-        ///<summary>Writes the indicated value to the buffer using the buffer's underlying routed reference buffer.</summary>
+        // Writes the indicated value to the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
         void write(T value) {
             T* data = *reinterpret_cast<T*>(routed_references + seek_in);
