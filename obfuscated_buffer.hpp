@@ -4,11 +4,14 @@
 
 #ifndef OBFUSCATED_BUFFER
 #define OBFUSCATED_BUFFER
-    template<size_t size, size_t align, unsigned long long(*randfunc)()>
+    #include <functional>
+
+    template<size_t size, size_t align>
     class obfuscated_buffer {
         private:
-        __int8* memory, **routed_references;
+        unsigned __int8* memory, **routed_references;
         size_t seek_in, size_of, align_of, fast_al, fast_nt;
+        std::function<unsigned long long()> rand_func;
 
         /*
             [Modified] Fisher Yate's Inside-Out Shuffle Algorithm:
@@ -26,8 +29,8 @@
             size_t* routes = new size_t[size_of];
 
             for (size_t i = 0, j; i < size_of; i++) {
-                j = (i == 0)? 0 : static_cast<size_t>(randfunc()) % (i + 1);
-
+                j = (i == 0)? 0 : static_cast<size_t>(rand_func()) % (i + 1);
+                
                 if (j != i) {
                     routes[i] = routes[j];
                     routed_references[routes[i]] = &memory[routes[i]];
@@ -42,14 +45,33 @@
 
         public:
         // Allocates the buffer and generates it's underlying routed reference buffer
-        obfuscated_buffer() {
-            size_of = size;
+        template<class _Fx>
+        obfuscated_buffer(_Fx&& randfn) {
+            rand_func = std::function<unsigned long long()>(randfn);
+
             align_of = align;
             fast_al = align - 1;
             fast_nt = ~(align - 1);
+            size_of = fast_align(size);
 
-            memory = new __int8[size_of]();
-            routed_references = new __int8*[size_of];
+            memory = new unsigned __int8[size_of]();
+            routed_references = new unsigned __int8*[size_of];
+
+            build_randref();
+        };
+
+        // Allocates the buffer and generates it's underlying routed reference buffer
+        template<typename T, class _Fx>
+        obfuscated_buffer(T* rand_objc, _Fx&& randfn) {
+            rand_func = std::function<unsigned long long()>(std::bind(randfn, rand_objc));
+
+            align_of = align;
+            fast_al = align - 1;
+            fast_nt = ~(align - 1);
+            size_of = fast_align(size);
+
+            memory = new unsigned __int8[size_of]();
+            routed_references = new unsigned __int8*[size_of];
 
             build_randref();
         };
@@ -58,13 +80,15 @@
 
         void inline fast_align(size_t& iter) { iter = (iter + fast_al) & fast_nt; };
 
-        operator __int8*() { return memory; };
+        size_t inline fast_align(size_t iter) { return (iter + fast_al) & fast_nt; };
+
+        operator unsigned __int8*() { return memory; };
 
         bool memexists() { return memory != nullptr; }
 
         size_t length() { return size_of; };
 
-        void seek(size_t pos) { fast_align(seek_in = pos); };
+        void seek(size_t pos) { seek_in = pos; };
 
         size_t get_seek() { return seek_in; };
 
@@ -87,31 +111,23 @@
         void alloc() {
             dealloc();
 
-            size_of = new_size;
+            size_of = fast_align(new_size);
             align_of = new_align;
             fast_al = align - 1;
             fast_nt = ~(align - 1);
-        
-            memory = new __int8[size_of];
-            routed_references = new __int8*[size_of];
+            
+            memory = new unsigned __int8[size_of];
+            routed_references = new unsigned __int8*[size_of];
 
             build_randref();
         }
 
         // Reads a value from the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
-        T read() {
-            int offset = seek_in;
-            seek_in = ((seek_in + sizeof(T)) + fast_al) & fast_nt;
-            return *reinterpret_cast<T*>(routed_references + offset);
-        };
+        T read() { return *reinterpret_cast<T*>(routed_references + (seek_in += sizeof(T)) - sizeof(T)); };
 
         // Writes the indicated value to the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
-        void write(T value) {
-            T* data = reinterpret_cast<T*>(routed_references + seek_in);
-            seek_in = ((seek_in + sizeof(T)) + fast_al) & fast_nt;
-            *data = value;
-        };
+        void write(T value) { *reinterpret_cast<T*>(routed_references + (seek_in += sizeof(T)) - sizeof(T)) = value; };
     };
 #endif
