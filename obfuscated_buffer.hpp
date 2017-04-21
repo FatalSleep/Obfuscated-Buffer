@@ -1,133 +1,111 @@
-/*
-    Reference: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle#The_.22inside-out.22_algorithm
-*/
-
 #ifndef OBFUSCATED_BUFFER
 #define OBFUSCATED_BUFFER
-    #include <functional>
-
-    template<size_t size, size_t align>
+    // +1 compile time math on templates: Aligns the size of <max_size> to the specified byte alignment.
+    // Force the user to pass an array that's size is byte aligned to match the byte aligned buffer size.
+    template<size_t max_size, size_t byte_align, size_t aligned_size = (max_size + (byte_align - 1)) & ~(byte_align - 1)>
     class obfuscated_buffer {
         private:
-        unsigned __int8* memory, **routed_references;
-        size_t seek_in, size_of, align_of, fast_al, fast_nt;
-        std::function<unsigned long long()> rand_func;
-
         /*
-            [Modified] Fisher Yate's Inside-Out Shuffle Algorithm:
-                [Original] algorithm generates a shuffled array of numbers in O(n) time.
-
-                The modified version below generates a shuffled list of indicies in O(n) time.
-                At the same time an array of pointers is generated where each pointer points
-                to the corrosponding shuffled index in this class' buffer.
-
-                This creates a buffer where each byte written to the buffer is written to a
-                random index in the buffer----via index routing via pointers.
+            Memory = Underlying buffer to write to.
+            References = Buffer of pointers that point to each byte of the underlying Memory buffer.
+            Seek_In = The current seek position of the Reference buffer, not the Memory buffer.
+            Fast_Al = (Byte_Align - 1) <-- fast compute byte alignemnt.
+            Fast_Nt = ~(Byte_Align - 1) <-- fast compute of byte alignment.
         */
-        // Generates the buffer's underlying routed references buffer.
-        void build_randref() {
-            size_t* routes = new size_t[size_of];
-
-            for (size_t i = 0, j; i < size_of; i++) {
-                j = (i == 0)? 0 : static_cast<size_t>(rand_func()) % (i + 1);
-                
-                if (j != i) {
-                    routes[i] = routes[j];
-                    routed_references[routes[i]] = &memory[routes[i]];
-                }
-
-                routes[j] = i;
-                routed_references[routes[j]] = &memory[routes[j]];
-            }
-
-            delete[] routes;
-        }
+        unsigned __int8 *memory, **references;
+        size_t seek_in, fast_al, fast_nt;
 
         public:
-        // Allocates the buffer and generates it's underlying routed reference buffer
-        template<class _Fx>
-        obfuscated_buffer(_Fx&& randfn) {
-            rand_func = std::function<unsigned long long()>(randfn);
+        // Initiates the buffer to the aligned length w/ the specified routes applied.
+        obfuscated_buffer(std::array<size_t, aligned_size> routes) {
+            // Preprocessing optimization for byte alignment.
+            fast_al = byte_align - 1;
+            fast_nt = ~fast_al;
+            seek_in = 0;
 
-            align_of = align;
-            fast_al = align - 1;
-            fast_nt = ~(align - 1);
-            size_of = fast_align(size);
+            // Initiate the initial underlying memory & the references buffer for the pointer reroutes.
+            memory = new unsigned __int8[aligned_size]();
+            references = new unsigned __int8*[aligned_size]();
 
-            memory = new unsigned __int8[size_of]();
-            routed_references = new unsigned __int8*[size_of];
+            // Re-route all of the pointers in (references) to memory[routes[i]].
+            // This will assign the (pointers) in references to the pointers of each position in (memory) at the position of routes[i].
+            reroute(routes);
+        }
 
-            build_randref();
-        };
-
-        // Allocates the buffer and generates it's underlying routed reference buffer
-        template<typename T, class _Fx>
-        obfuscated_buffer(T* rand_objc, _Fx&& randfn) {
-            rand_func = std::function<unsigned long long()>(std::bind(randfn, rand_objc));
-
-            align_of = align;
-            fast_al = align - 1;
-            fast_nt = ~(align - 1);
-            size_of = fast_align(size);
-
-            memory = new unsigned __int8[size_of]();
-            routed_references = new unsigned __int8*[size_of];
-
-            build_randref();
-        };
-
-        ~obfuscated_buffer() { dealloc(); }
-
-        void inline fast_align(size_t& iter) { iter = (iter + fast_al) & fast_nt; };
-
-        size_t inline fast_align(size_t iter) { return (iter + fast_al) & fast_nt; };
-
-        operator unsigned __int8*() { return memory; };
-
-        bool memexists() { return memory != nullptr; }
-
-        size_t length() { return size_of; };
-
-        void seek(size_t pos) { seek_in = pos; };
-
-        size_t get_seek() { return seek_in; };
-
-        void memzero() { for (int i = 0; i < size_of; i++) memory[i] = 0; }
-
-        // Deallocates the buffer's memory.
-        void dealloc() {
-            if (memory != nullptr && routed_references != nullptr) {
+        // Calls the buffer's destructor--don't.
+        ~obfuscated_buffer() {
+            if (memory != nullptr)
                 delete[] memory;
-                delete[] routed_references;
-                memory = nullptr;
-                routed_references = nullptr;
-                size_of = 0;
-                align_of = 0;
-            }
+
+            if (references != nullptr)
+                delete[] references;
         }
 
-        // Deallocates existing memmory & re-allocates the buffer and generates it's underlying routed reference buffer.
-        template<size_t new_size = size, size_t new_align = align>
-        void alloc() {
-            dealloc();
-
-            size_of = fast_align(new_size);
-            align_of = new_align;
-            fast_al = align - 1;
-            fast_nt = ~(align - 1);
-            
-            memory = new unsigned __int8[size_of];
-            routed_references = new unsigned __int8*[size_of];
-
-            build_randref();
+        // Re-routes the pointers of each byte in Memory to a reordered set of byte pointers in References.
+        void reroute(std::array<size_t, aligned_size> routes) {
+            for (size_t i = 0; i < aligned_size; i++)
+                references[i] = &memory[routes[i]];
         }
+
+        // Return whether we have memory available for reading/writting.
+        bool exists() { return memory != nullptr && references != nullptr; }
+
+        // Returns the aligned length of the buffer.
+        size_t length() { return aligned_size; };
+
+        // Returns the current seek position.
+        size_t position() { return seek_in; };
+
+        // Returns the current byte alignment.
+        size_t alignment() { return byte_align; }
+
+        // Returns the pointer to the routed references buffer--not the underlying memory buffer.
+        unsigned __int8* get() { return references; };
+
+        // Returns length of <iter> aligned to the buffer's byte alignment.
+        size_t align(size_t iter) { return (iter + fast_al) & fast_nt; };
+
+        // Sets the seek position to an un-aligned raw position.
+        void rseek(size_t pos) { seek_in = pos; };
+
+        // Sets the seek position to an ualigned position.
+        void seek(size_t pos) { seek_in = align(pos); };
+
+        // Sets each byte in the buffer to 0.
+        void zero() { for (size_t i = 0; i < size_of; i++) memory[i] = 0; }
+
+        /*------------------------------------------------------------------------------------------------------
+        Below allows us to write any instance or integeral type <T> to the buffer and move the write/read
+        pointer position forward in the buffer based on the number of bytes written/read.
+
+        This basically copies the low-level bytes of any instance of type <T> to the equivallently sized group
+        of bytes in references from references[seek_in] to references[seek_in + sizeof(T)].
+
+        Due to the fact that we're copying only the low level bytes, we can technically not only write integeral
+        data, but we can write the underlying byte data of any instance as well--the ever so evil and diabolical
+        beauty of reinterpret_cast.
+
+        ** A hack using reinterpret_cast<T*>() to convert the bytes in the reference buffer to the indicated
+        type of <T> so we can copy over the bytes of the data of type <T> being written/read from/to the buffer.
+
+        Of course however though, we can take the same approach but convert type data of type <T> to a byte
+        array pointer of __int8*. However it is more convient to convert to <T> instead of __int8*.
+        ------------------------------------------------------------------------------------------------------*/
 
         // Reads a value from the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
-        T read() { return *reinterpret_cast<T*>(routed_references + (seek_in += sizeof(T)) - sizeof(T)); };
+        T read() { return *reinterpret_cast<T*>(references + (seek_in += sizeof(T)) - sizeof(T)); };
+
+        // Reads a value from the buffer using the buffer's underlying routed reference buffer via the cast (T) operator.
+        template<typename T>
+        operator T() { return *reinterpret_cast<T*>(references + (seek_in += sizeof(T)) - sizeof(T)); };
 
         // Writes the indicated value to the buffer using the buffer's underlying routed reference buffer.
         template<typename T>
-        void write(T value) { *reinterpret_cast<T*>(routed_references + (seek_in += sizeof(T)) - sizeof(T)) = value; };
+        void write(T value) { *reinterpret_cast<T*>(references + (seek_in += sizeof(T)) - sizeof(T)) = value; };
+
+        // Writes the indicated value to the buffer using the buffer's underlying routed reference buffer via the ( = ) operator.
+        template<typename T>
+        T operator =(T value) { *reinterpret_cast<T*>(references + (seek_in += sizeof(T)) - sizeof(T)) = value; };
     };
 #endif
