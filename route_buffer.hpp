@@ -71,7 +71,7 @@ class route_buffer {
         if (buffer != nullptr)
             delete[] buffer;
         if (this->routes != nullptr)
-            delete[] routes;
+            delete[] this->routes;
         
         size_t align_len = align(length);
         buffer = new __uint8[align_len];
